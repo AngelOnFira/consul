@@ -558,9 +558,9 @@ func makeRBACRules(
 			}
 
 			finalPrincipals := optimizePrincipals([]*envoy_rbac_v3.Principal{rbacIxn.ComputedPrincipal})
-
-			if len(rbacIxn.Claims) > 0 {
-				claimsPrincipal := claimsListToPrincipals(rbacIxn.Claims)
+			claims := collectJWTClaims(rbacIxn)
+			if len(claims) > 0 {
+				claimsPrincipal := claimsListToPrincipals(claims)
 				finalPrincipals = append(finalPrincipals, claimsPrincipal)
 			}
 			// For L7: we should generate one Policy per Principal and list all of the Permissions
@@ -588,6 +588,20 @@ func makeRBACRules(
 		rbac.Policies = nil
 	}
 	return rbac
+}
+
+func collectJWTClaims(rbacIxn *rbacIntention) []*structs.IntentionJWTClaimVerification {
+	var claims []*structs.IntentionJWTClaimVerification
+
+	if len(rbacIxn.Claims) > 0 {
+		claims = append(claims, rbacIxn.Claims...)
+	}
+
+	for _, perm := range rbacIxn.Permissions {
+		claims = append(claims, perm.Claims...)
+	}
+
+	return claims
 }
 
 func claimsListToPrincipals(c []*structs.IntentionJWTClaimVerification) *envoy_rbac_v3.Principal {
