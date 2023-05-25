@@ -3,7 +3,13 @@ module test-sds-server
 go 1.16
 
 require (
-	github.com/envoyproxy/go-control-plane v0.9.9
-	github.com/hashicorp/go-hclog v0.16.2
-	google.golang.org/grpc v1.40.0
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/envoyproxy/go-control-plane v0.11.0
+	github.com/fatih/color v1.14.1 // indirect
+	github.com/hashicorp/go-hclog v1.5.0
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/stretchr/testify v1.8.3 // indirect
+	golang.org/x/net v0.10.0 // indirect
+	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
+	google.golang.org/grpc v1.55.0
 )
