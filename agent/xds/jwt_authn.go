@@ -25,7 +25,6 @@ type JWTAuthnProvider struct {
 	OriginalName string
 	ProviderName string
 	Provider     *structs.IntentionJWTProvider
-	IsPerm       bool
 }
 
 func makeJWTAuthFilter(pCE map[string]*structs.JWTProviderConfigEntry, intentions structs.SimplifiedIntentions) (*envoy_http_v3.HttpFilter, error) {
@@ -89,7 +88,7 @@ func collectJWTRequirements(i *structs.Intention) []*JWTAuthnProvider {
 
 	if i.JWT != nil {
 		for _, prov := range i.JWT.Providers {
-			reqs = append(reqs, &JWTAuthnProvider{IsPerm: false, Provider: prov, OriginalName: prov.Name, ProviderName: prov.Name})
+			reqs = append(reqs, &JWTAuthnProvider{Provider: prov, OriginalName: prov.Name, ProviderName: prov.Name})
 		}
 	}
 
@@ -99,13 +98,11 @@ func collectJWTRequirements(i *structs.Intention) []*JWTAuthnProvider {
 }
 
 func getPermissionsProviders(p []*structs.IntentionPermission) []*JWTAuthnProvider {
-	// intentionProviders := []*structs.IntentionJWTProvider{}
 	var reqs []*JWTAuthnProvider
 	for _, perm := range p {
 		if perm.JWT == nil {
 			continue
 		}
-		// intentionProviders = append(intentionProviders, perm.JWT.Providers...)
 		for _, prov := range perm.JWT.Providers {
 			name := prov.Name
 
@@ -118,7 +115,7 @@ func getPermissionsProviders(p []*structs.IntentionPermission) []*JWTAuthnProvid
 			if perm.HTTP.PathExact != "" {
 				name = buildProviderName(prov.Name, perm.HTTP.PathExact)
 			}
-			reqs = append(reqs, &JWTAuthnProvider{IsPerm: true, Provider: prov, ProviderName: name, OriginalName: prov.Name})
+			reqs = append(reqs, &JWTAuthnProvider{Provider: prov, ProviderName: name, OriginalName: prov.Name})
 		}
 	}
 
