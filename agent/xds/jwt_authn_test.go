@@ -65,21 +65,21 @@ var (
 	pWithOktaProvider = &structs.IntentionPermission{
 		Action: structs.IntentionActionAllow,
 		HTTP: &structs.IntentionHTTPPermission{
-			PathPrefix: "/some-special-path",
+			PathPrefix: "some-special-path",
 		},
 		JWT: oktaIntention,
 	}
 	pWithMultiProviders = &structs.IntentionPermission{
 		Action: structs.IntentionActionAllow,
 		HTTP: &structs.IntentionHTTPPermission{
-			PathPrefix: "/some-special-path",
+			PathPrefix: "some-special-path",
 		},
 		JWT: multiProviderIntentions,
 	}
 	pWithNoJWT = &structs.IntentionPermission{
 		Action: structs.IntentionActionAllow,
 		HTTP: &structs.IntentionHTTPPermission{
-			PathPrefix: "/some-special-path",
+			PathPrefix: "some-special-path",
 		},
 	}
 	fullRetryPolicy = &structs.JWKSRetryPolicy{
@@ -338,7 +338,7 @@ func TestBuildJWTProviderConfig(t *testing.T) {
 				Issuer:                  fullCE.Issuer,
 				Audiences:               fullCE.Audiences,
 				ForwardPayloadHeader:    "user-token",
-				PayloadInMetadata:       jwt_payload,
+				PayloadInMetadata:       buildProviderName(jwt_payload, ceRemoteJWKS.Name),
 				PadForwardPayloadHeader: false,
 				Forward:                 true,
 				JwksSourceSpecifier: &envoy_http_jwt_authn_v3.JwtProvider_LocalJwks{
@@ -356,7 +356,7 @@ func TestBuildJWTProviderConfig(t *testing.T) {
 			expected: &envoy_http_jwt_authn_v3.JwtProvider{
 				Issuer:            fullCE.Issuer,
 				Audiences:         fullCE.Audiences,
-				PayloadInMetadata: jwt_payload,
+				PayloadInMetadata: buildProviderName(jwt_payload, ceRemoteJWKS.Name),
 				JwksSourceSpecifier: &envoy_http_jwt_authn_v3.JwtProvider_RemoteJwks{
 					RemoteJwks: &envoy_http_jwt_authn_v3.RemoteJwks{
 						HttpUri: &envoy_core_v3.HttpUri{
@@ -376,7 +376,7 @@ func TestBuildJWTProviderConfig(t *testing.T) {
 	for name, tt := range tests {
 		tt := tt
 		t.Run(name, func(t *testing.T) {
-			res, err := buildJWTProviderConfig(tt.ce)
+			res, err := buildJWTProviderConfig(tt.ce, tt.ce.GetName())
 
 			if tt.expectedError != "" {
 				require.Error(t, err)
@@ -587,7 +587,7 @@ func TestBuildRouteRule(t *testing.T) {
 				RequirementType: &envoy_http_jwt_authn_v3.RequirementRule_Requires{
 					Requires: &envoy_http_jwt_authn_v3.JwtRequirement{
 						RequiresType: &envoy_http_jwt_authn_v3.JwtRequirement_ProviderName{
-							ProviderName: oktaProvider.Name,
+							ProviderName: buildProviderName(oktaProvider.Name, pWithMultiProviders.HTTP.PathPrefix),
 						},
 					},
 				},
@@ -604,7 +604,7 @@ func TestBuildRouteRule(t *testing.T) {
 				RequirementType: &envoy_http_jwt_authn_v3.RequirementRule_Requires{
 					Requires: &envoy_http_jwt_authn_v3.JwtRequirement{
 						RequiresType: &envoy_http_jwt_authn_v3.JwtRequirement_ProviderName{
-							ProviderName: oktaProvider.Name,
+							ProviderName: buildProviderName(oktaProvider.Name, pWithExactPath.HTTP.PathExact),
 						},
 					},
 				},
@@ -621,7 +621,7 @@ func TestBuildRouteRule(t *testing.T) {
 				RequirementType: &envoy_http_jwt_authn_v3.RequirementRule_Requires{
 					Requires: &envoy_http_jwt_authn_v3.JwtRequirement{
 						RequiresType: &envoy_http_jwt_authn_v3.JwtRequirement_ProviderName{
-							ProviderName: oktaProvider.Name,
+							ProviderName: buildProviderName(oktaProvider.Name, pWithRegex.HTTP.PathRegex),
 						},
 					},
 				},

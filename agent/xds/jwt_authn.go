@@ -21,6 +21,13 @@ var (
 	jwt_payload      = "jwt_payload"
 )
 
+type JWTAuthnProvider struct {
+	OriginalName string
+	ProviderName string
+	Provider     *structs.IntentionJWTProvider
+	IsPerm       bool
+}
+
 func makeJWTAuthFilter(pCE map[string]*structs.JWTProviderConfigEntry, intentions structs.SimplifiedIntentions) (*envoy_http_v3.HttpFilter, error) {
 	providers := map[string]*envoy_http_jwt_authn_v3.JwtProvider{}
 	var rules []*envoy_http_jwt_authn_v3.RequirementRule
@@ -30,20 +37,20 @@ func makeJWTAuthFilter(pCE map[string]*structs.JWTProviderConfigEntry, intention
 			continue
 		}
 		for _, jwtReq := range collectJWTRequirements(intention) {
-			if _, ok := providers[jwtReq.Name]; ok {
+			if _, ok := providers[jwtReq.ProviderName]; ok {
 				continue
 			}
 
-			jwtProvider, ok := pCE[jwtReq.Name]
+			jwtProvider, ok := pCE[jwtReq.OriginalName]
 
 			if !ok {
-				return nil, fmt.Errorf("provider specified in intention does not exist. Provider name: %s", jwtReq.Name)
+				return nil, fmt.Errorf("provider specified in intention does not exist. Provider name: %s", jwtReq.OriginalName)
 			}
-			envoyCfg, err := buildJWTProviderConfig(jwtProvider)
+			envoyCfg, err := buildJWTProviderConfig(jwtProvider, jwtReq.ProviderName)
 			if err != nil {
 				return nil, err
 			}
-			providers[jwtReq.Name] = envoyCfg
+			providers[jwtReq.ProviderName] = envoyCfg
 		}
 
 		for _, perm := range intention.Permissions {
@@ -59,7 +66,6 @@ func makeJWTAuthFilter(pCE map[string]*structs.JWTProviderConfigEntry, intention
 		if intention.JWT != nil {
 			for _, provider := range intention.JWT.Providers {
 				// The top-level provider applies to all requests.
-				// TODO(roncodingenthusiast): Handle provider.VerifyClaims
 				rule := buildRouteRule(provider, nil, "/")
 				rules = append(rules, rule)
 			}
@@ -78,35 +84,57 @@ func makeJWTAuthFilter(pCE map[string]*structs.JWTProviderConfigEntry, intention
 	return makeEnvoyHTTPFilter(jwt_envoy_filter, cfg)
 }
 
-func collectJWTRequirements(i *structs.Intention) []*structs.IntentionJWTProvider {
-	var jReqs []*structs.IntentionJWTProvider
+func collectJWTRequirements(i *structs.Intention) []*JWTAuthnProvider {
+	var reqs []*JWTAuthnProvider
 
 	if i.JWT != nil {
-		jReqs = append(jReqs, i.JWT.Providers...)
+		for _, prov := range i.JWT.Providers {
+			reqs = append(reqs, &JWTAuthnProvider{IsPerm: false, Provider: prov, OriginalName: prov.Name, ProviderName: prov.Name})
+		}
 	}
 
-	jReqs = append(jReqs, getPermissionsProviders(i.Permissions)...)
+	reqs = append(reqs, getPermissionsProviders(i.Permissions)...)
 
-	return jReqs
+	return reqs
 }
 
-func getPermissionsProviders(p []*structs.IntentionPermission) []*structs.IntentionJWTProvider {
-	intentionProviders := []*structs.IntentionJWTProvider{}
+func getPermissionsProviders(p []*structs.IntentionPermission) []*JWTAuthnProvider {
+	// intentionProviders := []*structs.IntentionJWTProvider{}
+	var reqs []*JWTAuthnProvider
 	for _, perm := range p {
 		if perm.JWT == nil {
 			continue
 		}
-		intentionProviders = append(intentionProviders, perm.JWT.Providers...)
+		// intentionProviders = append(intentionProviders, perm.JWT.Providers...)
+		for _, prov := range perm.JWT.Providers {
+			name := prov.Name
+
+			if perm.HTTP.PathPrefix != "" {
+				name = buildProviderName(prov.Name, perm.HTTP.PathPrefix)
+			}
+			if perm.HTTP.PathRegex != "" {
+				name = buildProviderName(prov.Name, perm.HTTP.PathRegex)
+			}
+			if perm.HTTP.PathExact != "" {
+				name = buildProviderName(prov.Name, perm.HTTP.PathExact)
+			}
+			reqs = append(reqs, &JWTAuthnProvider{IsPerm: true, Provider: prov, ProviderName: name, OriginalName: prov.Name})
+		}
 	}
 
-	return intentionProviders
+	return reqs
 }
 
-func buildJWTProviderConfig(p *structs.JWTProviderConfigEntry) (*envoy_http_jwt_authn_v3.JwtProvider, error) {
+func buildProviderName(name string, permissionPath string) string {
+	baseName := name + "_%s"
+	return fmt.Sprintf(baseName, permissionPath)
+}
+
+func buildJWTProviderConfig(p *structs.JWTProviderConfigEntry, payloadSuffix string) (*envoy_http_jwt_authn_v3.JwtProvider, error) {
 	envoyCfg := envoy_http_jwt_authn_v3.JwtProvider{
 		Issuer:            p.Issuer,
 		Audiences:         p.Audiences,
-		PayloadInMetadata: jwt_payload,
+		PayloadInMetadata: buildProviderName(jwt_payload, payloadSuffix),
 	}
 
 	if p.Forwarding != nil {
@@ -223,16 +251,10 @@ func buildJWTRetryPolicy(r *structs.JWKSRetryPolicy) *envoy_core_v3.RetryPolicy 
 }
 
 func buildRouteRule(provider *structs.IntentionJWTProvider, perm *structs.IntentionPermission, defaultPrefix string) *envoy_http_jwt_authn_v3.RequirementRule {
+	providerName := provider.Name
 	rule := &envoy_http_jwt_authn_v3.RequirementRule{
 		Match: &envoy_route_v3.RouteMatch{
 			PathSpecifier: &envoy_route_v3.RouteMatch_Prefix{Prefix: defaultPrefix},
-		},
-		RequirementType: &envoy_http_jwt_authn_v3.RequirementRule_Requires{
-			Requires: &envoy_http_jwt_authn_v3.JwtRequirement{
-				RequiresType: &envoy_http_jwt_authn_v3.JwtRequirement_ProviderName{
-					ProviderName: provider.Name,
-				},
-			},
 		},
 	}
 
@@ -241,19 +263,30 @@ func buildRouteRule(provider *structs.IntentionJWTProvider, perm *structs.Intent
 			rule.Match.PathSpecifier = &envoy_route_v3.RouteMatch_Prefix{
 				Prefix: perm.HTTP.PathPrefix,
 			}
+			providerName = buildProviderName(provider.Name, perm.HTTP.PathPrefix)
 		}
 
 		if perm.HTTP.PathExact != "" {
 			rule.Match.PathSpecifier = &envoy_route_v3.RouteMatch_Path{
 				Path: perm.HTTP.PathExact,
 			}
+			providerName = buildProviderName(provider.Name, perm.HTTP.PathExact)
 		}
 
 		if perm.HTTP.PathRegex != "" {
 			rule.Match.PathSpecifier = &envoy_route_v3.RouteMatch_SafeRegex{
 				SafeRegex: makeEnvoyRegexMatch(perm.HTTP.PathRegex),
 			}
+			providerName = buildProviderName(provider.Name, perm.HTTP.PathRegex)
 		}
+	}
+
+	rule.RequirementType = &envoy_http_jwt_authn_v3.RequirementRule_Requires{
+		Requires: &envoy_http_jwt_authn_v3.JwtRequirement{
+			RequiresType: &envoy_http_jwt_authn_v3.JwtRequirement_ProviderName{
+				ProviderName: providerName,
+			},
+		},
 	}
 
 	return rule
